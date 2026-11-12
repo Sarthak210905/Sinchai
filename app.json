@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Sinchai",
+    "slug": "sinchai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sinchai.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2E7D32"
+      },
+      "package": "com.sinchai.app"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "fb311a68-977b-4e50-a47f-2ffa675d6900"
+      }
+    },
+    "owner": "sarthak210905"
+  }
+}
