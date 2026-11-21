@@ -1,5 +1,5 @@
 // ============================================================
-// TypeScript interfaces for FarmerConnect
+// TypeScript interfaces for Sinchai
 // ============================================================
 
 /**
@@ -30,4 +30,40 @@ export interface UserProfile {
   email: string;
   displayName: string;
   farmName: string;
+}
+
+// ============================================================
+// MQTT Hardware Integration Types (Read-Only)
+// ============================================================
+
+export type MqttOutputState = 'ON' | 'OFF' | 'UNKNOWN';
+
+export interface MqttOutputs {
+  DO1: MqttOutputState;
+  DO2: MqttOutputState;
+  DO3: MqttOutputState;
+  DO4: MqttOutputState;
+  DO5: MqttOutputState;
+  DO6: MqttOutputState;
+  DO7: MqttOutputState;
+  DO8: MqttOutputState;
+}
+
+export type HomeConnectionStatus = 'online' | 'offline' | 'unknown';
+
+export type RequestStatus = 'idle' | 'pending' | 'received' | 'timeout';
+
+export interface DiagnosticLogEntry {
+  id: string;
+  timestamp: number;
+  type: 'info' | 'warn' | 'error' | 'rx' | 'tx';
+  message: string;
+}
+
+export interface MqttCredentials {
+  host: string;
+  port: number;
+  path: string;
+  username: string;
+  password: string;
 }

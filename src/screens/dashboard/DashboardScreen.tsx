@@ -17,6 +17,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { LanguageToggleButton } from '../../components/LanguageToggleButton';
 import { WeatherCard } from '../../components/WeatherCard';
 import { PulsingDot } from '../../components/PulsingDot';
+import { HardwareStatusCard } from '../../components/HardwareStatusCard';
 import { fetchFarmWeather, WeatherData } from '../../services/weatherService';
 import { SensorData, PumpStatus } from '../../types';
 import { formatTimestamp, getMoistureStatus, getTemperatureStatus } from '../../utils/helpers';
@@ -240,6 +241,11 @@ const DashboardScreen: React.FC = () => {
               </View>
             </Card.Content>
           </Card>
+        </Animated.View>
+
+        {/* ── Real ESP32 Hardware Integration (Read-Only) ── */}
+        <Animated.View style={{ opacity: cardsFadeAnim }}>
+          <HardwareStatusCard />
         </Animated.View>
 
         {/* ── Sensor Readings Grid ── */}

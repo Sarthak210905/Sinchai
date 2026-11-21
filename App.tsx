@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { AuthProvider } from './src/context/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
+import { MqttProvider } from './src/context/MqttContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
 // Custom Material Design 3 theme with green palette
@@ -28,8 +29,10 @@ export default function App() {
       <PaperProvider theme={theme}>
         <LanguageProvider>
           <AuthProvider>
-            <StatusBar style="light" backgroundColor="#1B5E20" />
-            <AppNavigator />
+            <MqttProvider>
+              <StatusBar style="light" backgroundColor="#1B5E20" />
+              <AppNavigator />
+            </MqttProvider>
           </AuthProvider>
         </LanguageProvider>
       </PaperProvider>
