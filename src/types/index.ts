@@ -14,7 +14,7 @@ export interface SensorData {
 }
 
 /**
- * Current pump status written by either the app or hardware
+ * Current pump status written by either the app or hardware (Firebase RTDB)
  */
 export interface PumpStatus {
   isOn: boolean;          // true = pump running, false = pump off
@@ -33,25 +33,96 @@ export interface UserProfile {
 }
 
 // ============================================================
-// MQTT Hardware Integration Types (Read-Only)
+// MQTT Hardware Integration Types (Valve Control Firmware)
 // ============================================================
 
-export type MqttOutputState = 'ON' | 'OFF' | 'UNKNOWN';
+export type MqttOutputState = 'ON' | 'OFF' | 'UNKNOWN' | 'UNCERTAIN';
+export type OutputSource = 'STATUS' | 'ACK' | 'NONE';
+
+export interface OutputItemState {
+  state: MqttOutputState;
+  source: OutputSource;
+}
 
 export interface MqttOutputs {
-  DO1: MqttOutputState;
-  DO2: MqttOutputState;
-  DO3: MqttOutputState;
-  DO4: MqttOutputState;
-  DO5: MqttOutputState;
-  DO6: MqttOutputState;
-  DO7: MqttOutputState;
-  DO8: MqttOutputState;
+  DO1: OutputItemState;
+  DO2: OutputItemState;
+  DO3: OutputItemState;
+  DO4: OutputItemState;
+  DO5: OutputItemState;
+  DO6: OutputItemState;
+  DO7: OutputItemState;
+  DO8: OutputItemState;
+}
+
+export interface ExtensionOutputs {
+  V9: OutputItemState;
+  V10: OutputItemState;
 }
 
 export type HomeConnectionStatus = 'online' | 'offline' | 'unknown';
 
-export type RequestStatus = 'idle' | 'pending' | 'received' | 'timeout';
+export type RequestStatus = 'idle' | 'pending' | 'received' | 'timeout' | 'error';
+
+export type MqttCommand =
+  | 'STATUS'
+  | 'DO1_ON'
+  | 'DO1_OFF'
+  | 'DO2_ON'
+  | 'DO2_OFF'
+  | 'DO3_ON'
+  | 'DO3_OFF'
+  | 'DO4_ON'
+  | 'DO4_OFF'
+  | 'DO5_ON'
+  | 'DO5_OFF'
+  | 'DO6_ON'
+  | 'DO6_OFF'
+  | 'DO7_ON'
+  | 'DO7_OFF'
+  | 'DO8_ON'
+  | 'DO8_OFF'
+  | 'V9_ON'
+  | 'V9_OFF'
+  | 'V10_ON'
+  | 'V10_OFF'
+  | 'ALL_ON'
+  | 'ALL_OFF';
+
+export interface JsonCommandRequest {
+  id: string;
+  command: MqttCommand;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+export type CommandResponseResult =
+  | 'acknowledged'
+  | 'status_received'
+  | 'partial'
+  | 'controller_error'
+  | 'unconfirmed'
+  | 'rejected'
+  | 'duplicate'
+  | 'busy'
+  | 'unsolicited'
+  | 'unmatched_response';
+
+export interface JsonCommandResponse {
+  type: 'command_result';
+  id?: string;
+  command?: string;
+  result: CommandResponseResult | string;
+  detail?: string;
+}
+
+export interface LastCommandOutcome {
+  command: MqttCommand;
+  result: string;
+  detail: string;
+  timestamp: number;
+  id: string;
+}
 
 export interface DiagnosticLogEntry {
   id: string;

@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Card, Text, Button, Divider, Chip } from 'react-native-paper';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Modal,
+} from 'react-native';
+import { Card, Text, Button, Divider, Chip, Switch } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMqtt } from '../context/MqttContext';
 import { useLanguage } from '../context/LanguageContext';
-import { MqttOutputState, MqttOutputs } from '../types';
+import {
+  MqttOutputs,
+  ExtensionOutputs,
+  OutputItemState,
+  MqttCommand,
+} from '../types';
 import { formatTimestamp } from '../utils/helpers';
 import { MqttConnectModal } from '../screens/mqtt/MqttConnectModal';
 
@@ -16,45 +27,133 @@ export const HardwareStatusCard: React.FC = () => {
     replySubscribed,
     homeStatus,
     outputs,
+    extensions,
     isStale,
     lastValidReplyTime,
     requestStatus,
+    pendingCommand,
+    requiresStatusRefresh,
+    lastCommandOutcome,
     diagnostics,
+    commissioningMode,
+    setCommissioningMode,
+    sendCommand,
     readStatus,
     clearDiagnostics,
   } = useMqtt();
 
-  const [modalVisible, setModalVisible] = useState(false);
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showLimitations, setShowLimitations] = useState(false);
 
-  // Can request status only when connected, reply topic is subscribed, and not currently pending
-  const canReadStatus = isConnected && replySubscribed && requestStatus !== 'pending';
+  // Confirmation Modal State
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [selectedCommand, setSelectedCommand] = useState<MqttCommand | null>(null);
 
-  // Helper for DO badge styling
-  const renderOutputChip = (key: keyof MqttOutputs, state: MqttOutputState) => {
+  const canIssueRequest = isConnected && replySubscribed && requestStatus !== 'pending';
+  const canSendActuator = canIssueRequest && !requiresStatusRefresh;
+
+  const handlePromptCommand = (cmd: MqttCommand) => {
+    setSelectedCommand(cmd);
+    setConfirmModalVisible(true);
+  };
+
+  const handleConfirmSend = () => {
+    if (selectedCommand) {
+      sendCommand(selectedCommand);
+    }
+    setConfirmModalVisible(false);
+    setSelectedCommand(null);
+  };
+
+  // Badge styling for DO and Extension states
+  const renderOutputItem = (
+    label: string,
+    item: OutputItemState,
+    isCommissioningTarget = false,
+    onPressOn?: () => void,
+    onPressOff?: () => void,
+    controlDisabled = false
+  ) => {
     let bgColor = '#EEEEEE';
     let textColor = '#616161';
     let icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] = 'help-circle-outline';
 
-    if (state === 'ON') {
+    if (item.state === 'ON') {
       bgColor = '#E8F5E9';
       textColor = '#2E7D32';
       icon = 'check-circle';
-    } else if (state === 'OFF') {
+    } else if (item.state === 'OFF') {
       bgColor = '#FFEBEE';
       textColor = '#C62828';
       icon = 'close-circle';
+    } else if (item.state === 'UNCERTAIN') {
+      bgColor = '#FFF3E0';
+      textColor = '#E65100';
+      icon = 'alert-circle';
     }
 
+    const sourceTag =
+      item.source === 'STATUS'
+        ? t('statusBadge')
+        : item.source === 'ACK'
+        ? t('ackBadge')
+        : item.state === 'UNCERTAIN'
+        ? t('uncertainBadge')
+        : '';
+
     return (
-      <View key={key} style={[styles.outputItem, { backgroundColor: bgColor }]}>
+      <View
+        key={label}
+        style={[
+          styles.outputItem,
+          { backgroundColor: bgColor },
+          isCommissioningTarget && styles.commissioningTargetBorder,
+        ]}
+      >
         <View style={styles.outputItemHeader}>
-          <Text style={styles.outputLabel}>{key}</Text>
-          <MaterialCommunityIcons name={icon} size={16} color={textColor} />
+          <Text style={styles.outputLabel}>{label}</Text>
+          <MaterialCommunityIcons name={icon} size={15} color={textColor} />
         </View>
+
         <Text style={[styles.outputStateText, { color: textColor }]}>
-          {state}
+          {item.state}
         </Text>
+
+        {sourceTag ? (
+          <Text style={[styles.sourceBadge, { color: textColor }]} numberOfLines={1}>
+            {sourceTag}
+          </Text>
+        ) : null}
+
+        {/* Action buttons if controllable */}
+        {onPressOn && onPressOff && (
+          <View style={styles.inlineActionRow}>
+            <TouchableOpacity
+              onPress={onPressOn}
+              disabled={controlDisabled}
+              style={[
+                styles.inlineActionBtn,
+                styles.inlineBtnOn,
+                controlDisabled && styles.btnDisabled,
+              ]}
+            >
+              <Text style={styles.inlineBtnText}>{t('turnOn')}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={onPressOff}
+              disabled={controlDisabled}
+              style={[
+                styles.inlineActionBtn,
+                styles.inlineBtnOff,
+                controlDisabled && styles.btnDisabled,
+              ]}
+            >
+              <Text style={styles.inlineBtnText}>{t('turnOff')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   };
@@ -74,11 +173,17 @@ export const HardwareStatusCard: React.FC = () => {
   const getRequestBadge = () => {
     switch (requestStatus) {
       case 'pending':
-        return { text: t('statusPending'), color: '#E65100', bg: '#FFF3E0' };
+        return {
+          text: `${t('statusPending')}${pendingCommand ? ` (${pendingCommand})` : ''}`,
+          color: '#E65100',
+          bg: '#FFF3E0',
+        };
       case 'received':
         return { text: t('statusReceived'), color: '#2E7D32', bg: '#E8F5E9' };
       case 'timeout':
         return { text: t('statusTimeout'), color: '#C62828', bg: '#FFEBEE' };
+      case 'error':
+        return { text: 'Error / Rejected', color: '#B71C1C', bg: '#FFCDD2' };
       default:
         return { text: t('statusIdle'), color: '#616161', bg: '#F5F5F5' };
     }
@@ -91,7 +196,7 @@ export const HardwareStatusCard: React.FC = () => {
     <>
       <Card style={styles.card}>
         <Card.Content>
-          {/* Top Bar: Title & Connection indicator */}
+          {/* Header */}
           <View style={styles.headerRow}>
             <View style={styles.titleWithIcon}>
               <MaterialCommunityIcons name="chip" size={24} color="#2E7D32" />
@@ -101,9 +206,8 @@ export const HardwareStatusCard: React.FC = () => {
               </View>
             </View>
 
-            {/* App-to-Broker Indicator Button */}
             <TouchableOpacity
-              onPress={() => setModalVisible(true)}
+              onPress={() => setSettingsModalVisible(true)}
               style={[
                 styles.brokerPill,
                 { backgroundColor: isConnected ? '#E8F5E9' : '#FFEBEE' },
@@ -132,9 +236,8 @@ export const HardwareStatusCard: React.FC = () => {
 
           <Divider style={styles.divider} />
 
-          {/* Connection Overview: Home ESP32 & Request State */}
+          {/* Connection Overview */}
           <View style={styles.statusRow}>
-            {/* Home ESP32 Connection */}
             <View style={styles.statusCol}>
               <Text style={styles.sectionLabel}>{t('homeStatusLabel')}</Text>
               <View style={[styles.badge, { backgroundColor: homeBadge.bg }]}>
@@ -145,7 +248,6 @@ export const HardwareStatusCard: React.FC = () => {
               </View>
             </View>
 
-            {/* Request State */}
             <View style={styles.statusCol}>
               <Text style={styles.sectionLabel}>Request State</Text>
               <View style={[styles.badge, { backgroundColor: reqBadge.bg }]}>
@@ -159,31 +261,30 @@ export const HardwareStatusCard: React.FC = () => {
             </View>
           </View>
 
-          {/* Home Status Disclaimer Notice */}
           <Text style={styles.disclaimerText}>
             ℹ️ {t('homeDisclaimer')}
           </Text>
 
-          {/* Read Status Button & Last Reply Time */}
+          {/* Read Status Button & Settings */}
           <View style={styles.actionContainer}>
             <Button
               mode="contained"
               icon="sync"
               onPress={() => readStatus()}
-              loading={requestStatus === 'pending'}
-              disabled={!canReadStatus}
+              loading={requestStatus === 'pending' && pendingCommand === 'STATUS'}
+              disabled={!canIssueRequest}
               buttonColor="#2E7D32"
               textColor="#FFFFFF"
               style={styles.readStatusButton}
             >
-              {requestStatus === 'pending' ? t('readingStatus') : t('readStatusBtn')}
+              {t('readStatusBtn')}
             </Button>
 
             {!isConnected && (
               <Button
                 mode="outlined"
                 icon="cog"
-                onPress={() => setModalVisible(true)}
+                onPress={() => setSettingsModalVisible(true)}
                 textColor="#2E7D32"
                 style={styles.settingsButton}
               >
@@ -192,7 +293,17 @@ export const HardwareStatusCard: React.FC = () => {
             )}
           </View>
 
-          {/* Reply Timestamp & Stale Warning */}
+          {/* Status Refresh Required Alert */}
+          {requiresStatusRefresh && isConnected && (
+            <View style={styles.warningBox}>
+              <MaterialCommunityIcons name="alert" size={18} color="#E65100" />
+              <Text style={styles.warningBoxText}>
+                {t('statusRefreshRequired')}
+              </Text>
+            </View>
+          )}
+
+          {/* Reply Timestamp & Stale Chip */}
           <View style={styles.timestampRow}>
             <Text style={styles.timestampLabel}>
               {t('lastReplyLabel')}:{' '}
@@ -214,36 +325,207 @@ export const HardwareStatusCard: React.FC = () => {
 
           <Divider style={styles.divider} />
 
-          {/* DO1 - DO8 Output States Grid */}
+          {/* ── Section 1: DO1 Commissioning Target ── */}
+          <View style={styles.commissioningSection}>
+            <View style={styles.commissioningHeaderRow}>
+              <View style={styles.commTitleWithIcon}>
+                <MaterialCommunityIcons name="shield-check" size={18} color="#2E7D32" />
+                <Text style={styles.commissioningTitle}>{t('commissioningTitle')}</Text>
+              </View>
+              <Chip compact style={styles.commChip}>
+                COMMISSIONING
+              </Chip>
+            </View>
+
+            <Text style={styles.commNoticeText}>{t('commissioningNotice')}</Text>
+
+            {/* DO1 Card with direct controls */}
+            <View style={styles.do1HighlightContainer}>
+              <View style={styles.do1InfoCol}>
+                <Text style={styles.do1Label}>DO1 Main Valve</Text>
+                <View style={styles.do1StateRow}>
+                  <Text style={[styles.do1StateText, { color: outputs.DO1.state === 'ON' ? '#2E7D32' : outputs.DO1.state === 'OFF' ? '#C62828' : '#E65100' }]}>
+                    {outputs.DO1.state}
+                  </Text>
+                  {outputs.DO1.source !== 'NONE' && (
+                    <Text style={styles.do1SourceText}>
+                      ({outputs.DO1.source === 'STATUS' ? t('statusBadge') : t('ackBadge')})
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.do1ButtonsRow}>
+                <Button
+                  mode="contained"
+                  buttonColor="#2E7D32"
+                  disabled={!canSendActuator}
+                  onPress={() => handlePromptCommand('DO1_ON')}
+                  style={styles.commActionBtn}
+                  compact
+                >
+                  {t('turnOn')}
+                </Button>
+                <Button
+                  mode="contained"
+                  buttonColor="#C62828"
+                  disabled={!canSendActuator}
+                  onPress={() => handlePromptCommand('DO1_OFF')}
+                  style={styles.commActionBtn}
+                  compact
+                >
+                  {t('turnOff')}
+                </Button>
+              </View>
+            </View>
+          </View>
+
+          <Divider style={styles.divider} />
+
+          {/* ── Commissioning Lock Toggle ── */}
+          <View style={styles.lockToggleRow}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.lockToggleTitle}>
+                {commissioningMode ? t('unlockAdvancedControls') : t('lockAdvancedControls')}
+              </Text>
+              <Text style={styles.lockToggleDesc}>
+                {commissioningMode
+                  ? 'DO2–DO8, V9, V10, and ALL controls are currently locked for safety.'
+                  : t('advancedUnlockedNotice')}
+              </Text>
+            </View>
+            <Switch
+              value={!commissioningMode}
+              onValueChange={(unlocked) => setCommissioningMode(!unlocked)}
+              color="#2E7D32"
+            />
+          </View>
+
+          <Divider style={styles.divider} />
+
+          {/* ── Section 2: DO1–DO8 Grid ── */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>{t('outputsTitle')}</Text>
           </View>
 
           <View style={styles.outputsGrid}>
             {(['DO1', 'DO2', 'DO3', 'DO4', 'DO5', 'DO6', 'DO7', 'DO8'] as (keyof MqttOutputs)[]).map(
-              (key) => renderOutputChip(key, outputs[key])
+              (key) => {
+                const isTarget = key === 'DO1';
+                const isLocked = commissioningMode && !isTarget;
+                return renderOutputItem(
+                  key,
+                  outputs[key],
+                  isTarget,
+                  !isLocked ? () => handlePromptCommand(`${key}_ON` as MqttCommand) : undefined,
+                  !isLocked ? () => handlePromptCommand(`${key}_OFF` as MqttCommand) : undefined,
+                  !canSendActuator || isLocked
+                );
+              }
             )}
           </View>
 
-          {/* Valve Logic Disclaimer */}
           <Text style={styles.disclaimerText}>
-            ⚠️ {t('valveDisclaimer')}
+            ⚠️ {t('valveAckDisclaimer')}
           </Text>
 
           <Divider style={styles.divider} />
 
-          {/* Extension Valves V9 / V10 Notice */}
-          <View style={styles.v9Row}>
-            <View style={styles.v9TitleRow}>
-              <MaterialCommunityIcons name="power-plug-off-outline" size={18} color="#757575" />
-              <Text style={styles.v9Title}>{t('v9v10Title')}</Text>
-            </View>
-            <Text style={styles.v9Unavailable}>{t('v9v10Unavailable')}</Text>
+          {/* ── Section 3: Extension Valves V9 / V10 ── */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>{t('extensionTitle')}</Text>
           </View>
+
+          <View style={styles.extensionRow}>
+            {(['V9', 'V10'] as (keyof ExtensionOutputs)[]).map((key) => {
+              const isLocked = commissioningMode;
+              return renderOutputItem(
+                key,
+                extensions[key],
+                false,
+                !isLocked ? () => handlePromptCommand(`${key}_ON` as MqttCommand) : undefined,
+                !isLocked ? () => handlePromptCommand(`${key}_OFF` as MqttCommand) : undefined,
+                !canSendActuator || isLocked
+              );
+            })}
+          </View>
+
+          <Text style={styles.disclaimerText}>
+            ℹ️ {t('extensionDisclaimer')}
+          </Text>
+
+          {/* ── Section 4: ALL Commands (when unlocked) ── */}
+          {!commissioningMode && (
+            <View style={styles.allActionsContainer}>
+              <Text style={styles.allActionsLabel}>Bulk Actuation:</Text>
+              <View style={styles.allActionsRow}>
+                <Button
+                  mode="outlined"
+                  textColor="#2E7D32"
+                  style={styles.allBtn}
+                  disabled={!canSendActuator}
+                  onPress={() => handlePromptCommand('ALL_ON')}
+                >
+                  {t('allOn')}
+                </Button>
+                <Button
+                  mode="outlined"
+                  textColor="#C62828"
+                  style={styles.allBtn}
+                  disabled={!canSendActuator}
+                  onPress={() => handlePromptCommand('ALL_OFF')}
+                >
+                  {t('allOff')}
+                </Button>
+              </View>
+            </View>
+          )}
+
+          {/* ── Section 5: Last Command Result Card ── */}
+          {lastCommandOutcome && (
+            <View style={styles.lastOutcomeBox}>
+              <View style={styles.lastOutcomeHeader}>
+                <Text style={styles.lastOutcomeLabel}>{t('lastCommandLabel')}:</Text>
+                <Chip compact style={styles.outcomeResultChip}>
+                  {lastCommandOutcome.result}
+                </Chip>
+              </View>
+              <Text style={styles.lastOutcomeCmd}>Command: {lastCommandOutcome.command}</Text>
+              {lastCommandOutcome.detail ? (
+                <Text style={styles.lastOutcomeDetail}>Detail: {lastCommandOutcome.detail}</Text>
+              ) : null}
+            </View>
+          )}
 
           <Divider style={styles.divider} />
 
-          {/* Diagnostics Section Toggle */}
+          {/* ── Section 6: Limitations Documentation Toggle ── */}
+          <TouchableOpacity
+            style={styles.diagToggleRow}
+            onPress={() => setShowLimitations(!showLimitations)}
+          >
+            <View style={styles.diagToggleLeft}>
+              <MaterialCommunityIcons name="information" size={18} color="#0277BD" />
+              <Text style={[styles.diagToggleText, { color: '#0277BD' }]}>
+                {t('limitationsTitle')}
+              </Text>
+            </View>
+            <MaterialCommunityIcons
+              name={showLimitations ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color="#0277BD"
+            />
+          </TouchableOpacity>
+
+          {showLimitations && (
+            <View style={styles.limitationsBox}>
+              <Text style={styles.limitationsText}>{t('limitationsText')}</Text>
+            </View>
+          )}
+
+          <Divider style={styles.divider} />
+
+          {/* ── Section 7: Diagnostics Section Toggle ── */}
           <TouchableOpacity
             style={styles.diagToggleRow}
             onPress={() => setShowDiagnostics(!showDiagnostics)}
@@ -264,7 +546,6 @@ export const HardwareStatusCard: React.FC = () => {
             />
           </TouchableOpacity>
 
-          {/* Expanded Diagnostics Log */}
           {showDiagnostics && (
             <View style={styles.diagContainer}>
               <View style={styles.diagHeader}>
@@ -302,10 +583,48 @@ export const HardwareStatusCard: React.FC = () => {
         </Card.Content>
       </Card>
 
-      {/* Connection Modal */}
+      {/* Confirmation Dialog */}
+      <Modal
+        visible={confirmModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmModalVisible(false)}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmBox}>
+            <View style={styles.confirmHeader}>
+              <MaterialCommunityIcons name="alert-circle" size={24} color="#E65100" />
+              <Text style={styles.confirmTitle}>{t('confirmCommandTitle')}</Text>
+            </View>
+
+            <Text style={styles.confirmMessage}>
+              {t('confirmCommandMessage').replace('%cmd%', selectedCommand || '')}
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <Button
+                mode="text"
+                onPress={() => setConfirmModalVisible(false)}
+                textColor="#757575"
+              >
+                {t('cancelBtn')}
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleConfirmSend}
+                buttonColor="#2E7D32"
+              >
+                {t('confirmBtn')}
+              </Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MQTT Configuration Modal */}
       <MqttConnectModal
-        visible={modalVisible}
-        onDismiss={() => setModalVisible(false)}
+        visible={settingsModalVisible}
+        onDismiss={() => setSettingsModalVisible(false)}
       />
     </>
   );
@@ -429,6 +748,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderColor: '#2E7D32',
   },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1,
+    borderColor: '#FFE0B2',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  warningBoxText: {
+    fontSize: 12,
+    color: '#E65100',
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 16,
+  },
   timestampRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -452,6 +789,95 @@ const styles = StyleSheet.create({
     color: '#E65100',
     fontWeight: '700',
   },
+  commissioningSection: {
+    backgroundColor: '#F1F8E9',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#DCEDC8',
+  },
+  commissioningHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  commTitleWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  commissioningTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2E7D32',
+  },
+  commChip: {
+    backgroundColor: '#C8E6C9',
+    height: 22,
+  },
+  commNoticeText: {
+    fontSize: 11,
+    color: '#558B2F',
+    lineHeight: 15,
+    marginBottom: 8,
+  },
+  do1HighlightContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  do1InfoCol: {
+    flex: 1,
+  },
+  do1Label: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2E7D32',
+  },
+  do1StateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  do1StateText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  do1SourceText: {
+    fontSize: 10,
+    color: '#757575',
+  },
+  do1ButtonsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  commActionBtn: {
+    borderRadius: 6,
+  },
+  lockToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  lockToggleTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#333333',
+  },
+  lockToggleDesc: {
+    fontSize: 11,
+    color: '#757575',
+    lineHeight: 15,
+    marginTop: 2,
+  },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -466,22 +892,31 @@ const styles = StyleSheet.create({
   outputsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  extensionRow: {
+    flexDirection: 'row',
     gap: 8,
     marginBottom: 6,
   },
   outputItem: {
-    width: '23%',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
+    width: '23.5%',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  commissioningTargetBorder: {
+    borderWidth: 1.5,
+    borderColor: '#2E7D32',
   },
   outputItemHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   outputLabel: {
     fontSize: 11,
@@ -489,31 +924,106 @@ const styles = StyleSheet.create({
     color: '#424242',
   },
   outputStateText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
-  v9Row: {
+  sourceBadge: {
+    fontSize: 8,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  inlineActionRow: {
+    flexDirection: 'row',
+    gap: 3,
+    marginTop: 4,
+    width: '100%',
+  },
+  inlineActionBtn: {
+    flex: 1,
+    paddingVertical: 3,
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  inlineBtnOn: {
+    backgroundColor: '#2E7D32',
+  },
+  inlineBtnOff: {
+    backgroundColor: '#C62828',
+  },
+  btnDisabled: {
+    opacity: 0.35,
+  },
+  inlineBtnText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  allActionsContainer: {
+    marginTop: 10,
     backgroundColor: '#FAFAFA',
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#EEEEEE',
   },
-  v9TitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
+  allActionsLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#424242',
+    marginBottom: 6,
   },
-  v9Title: {
+  allActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  allBtn: {
+    flex: 1,
+    borderRadius: 6,
+  },
+  lastOutcomeBox: {
+    marginTop: 12,
+    backgroundColor: '#F5F5F5',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  lastOutcomeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  lastOutcomeLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: '#616161',
   },
-  v9Unavailable: {
+  outcomeResultChip: {
+    height: 22,
+    backgroundColor: '#E0E0E0',
+  },
+  lastOutcomeCmd: {
     fontSize: 11,
-    color: '#9E9E9E',
-    fontStyle: 'italic',
+    fontWeight: '600',
+    color: '#212121',
+  },
+  lastOutcomeDetail: {
+    fontSize: 11,
+    color: '#424242',
+    marginTop: 2,
+    fontFamily: 'monospace',
+  },
+  limitationsBox: {
+    backgroundColor: '#E1F5FE',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  limitationsText: {
+    fontSize: 11,
+    color: '#01579B',
+    lineHeight: 16,
   },
   diagToggleRow: {
     flexDirection: 'row',
@@ -604,5 +1114,42 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#424242',
     fontFamily: 'monospace',
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    elevation: 6,
+  },
+  confirmHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  confirmTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#212121',
+  },
+  confirmMessage: {
+    fontSize: 13,
+    color: '#424242',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
   },
 });
