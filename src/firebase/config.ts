@@ -14,14 +14,7 @@ import { getDatabase } from 'firebase/database';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDkSo2Rf8QhSntbhBUOngPlyXKSj3VsiD4",
-  authDomain: "sinchai-2025.firebaseapp.com",
-  databaseURL: "https://sinchai-2025-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "sinchai-2025",
-  storageBucket: "sinchai-2025.firebasestorage.app",
-  messagingSenderId: "283561368568",
-  appId: "1:283561368568:web:9b61affcf5f3bba006140d",
-  measurementId: "G-ECJNC9ETHP"
+
 };
 
 // Initialize Firebase App singleton
